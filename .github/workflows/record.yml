@@ -1,8 +1,10 @@
 name: Record license request
 
 # The kit opens a GitHub issue titled "License REQUEST <PCCODE>" via the
-# GitHub API. This workflow parses it into pending.txt so that when you
-# later add the code to approved.txt, grant.py can wrap the key.
+# GitHub API. This workflow parses it into pending.txt. If the PC code is
+# ALREADY in approved.txt (re-activation with a new identity on the same
+# approved machine), it also triggers the grant workflow immediately -
+# no author action needed for reinstalls.
 on:
   issues:
     types: [opened]
@@ -10,6 +12,7 @@ on:
 permissions:
   contents: write
   issues: write
+  actions: write
 
 jobs:
   record:
@@ -24,10 +27,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
         run: python scripts/record_request.py
-      - name: Close issue with note
+      - name: Re-grant if this PC is already approved
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue list --repo "$GITHUB_REPOSITORY" --state open --json number --limit 10 --jq '.[].number' | while read n; do
-            gh issue close "$n" --repo "$GITHUB_REPOSITORY" --comment "Request registered. Waiting for author approval." || true
-          done
+          PC=$(python scripts/pc_from_event.py)
+          if [ -n "$PC" ] && grep -qi "^$PC$" approved.txt; then
+            echo "$PC already approved - triggering grant workflow"
+            gh workflow run grant.yml --repo "$GITHUB_REPOSITORY"
+          fi
+      - name: Close issue with note
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          PC=$(python scripts/pc_from_event.py)
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --comment "Request registered for $PC." || true
