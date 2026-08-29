@@ -1,0 +1,33 @@
+name: Record license request
+
+# The kit opens a GitHub issue titled "License REQUEST <PCCODE>" via the
+# GitHub API. This workflow parses it into pending.txt so that when you
+# later add the code to approved.txt, grant.py can wrap the key.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Parse issue and register public key
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: python scripts/record_request.py
+      - name: Close issue with note
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --json number --limit 10 --jq '.[].number' | while read n; do
+            gh issue close "$n" --repo "$GITHUB_REPOSITORY" --comment "Request registered. Waiting for author approval." || true
+          done

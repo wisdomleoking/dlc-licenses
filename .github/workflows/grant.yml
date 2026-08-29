@@ -1,0 +1,30 @@
+name: Grant license keys
+
+# Runs when you add a PC code to approved.txt (edit on github.com and save,
+# or push locally). For every approved-but-not-yet-granted code: wraps the
+# master key K with that PC's registered RSA public key and publishes
+# keygrants/<PCCODE>.b64 to a 'licenses' release. Marks it in granted.txt.
+on:
+  push:
+    paths:
+      - 'approved.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  grant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pycryptodome requests
+      - name: Wrap keys for newly approved PCs
+        env:
+          MASTER_KEY: ${{ secrets.MODEL_KEY }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/grant.py
