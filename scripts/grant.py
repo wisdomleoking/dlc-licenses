@@ -7,7 +7,9 @@ CODE+PUBKEY-PREFIX so re-activation with a fresh identity re-grants.
 import os
 import base64
 import hashlib
+import json
 import subprocess
+import urllib.request
 
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
@@ -17,6 +19,53 @@ from Crypto.Hash import SHA256
 def sh(cmd):
     r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
+
+
+def api(method, path, data=None):
+    """GitHub REST API via urllib - reliable asset upload/replace."""
+    token = os.environ["GH_TOKEN"]
+    repo = os.environ["GH_REPO"]
+    url = f"https://api.github.com/repos/{repo}/{path}"
+    body = json.dumps(data).encode() if data is not None else None
+    req = urllib.request.Request(url, method=method, data=body)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "dlc-grant")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req) as r:
+        txt = r.read()
+        return json.loads(txt) if txt else None
+
+
+def upload_asset(pc, b64_content):
+    repo = os.environ["GH_REPO"]
+    token = os.environ["GH_TOKEN"]
+    name = f"keygrants_{pc}.b64"
+
+    # find release 'licenses' (create if missing)
+    rel = None
+    for r in api("GET", "releases"):
+        if r.get("tag_name") == "licenses":
+            rel = r
+            break
+    if rel is None:
+        rel = api("POST", "releases", {"tag_name": "licenses", "name": "License grants"})
+
+    # delete existing asset with same name, if any
+    for a in rel.get("assets", []):
+        if a["name"] == name:
+            api("DELETE", f"releases/assets/{a['id']}")
+            break
+
+    # upload via the asset upload URL
+    upload_url = rel["upload_url"].replace("{?name,label}", f"?name={name}")
+    req = urllib.request.Request(upload_url, method="POST", data=b64_content.encode())
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/octet-stream")
+    req.add_header("User-Agent", "dlc-grant")
+    with urllib.request.urlopen(req) as r:
+        json.loads(r.read())
+    print(f"uploaded {name}")
 
 
 def load_approved():
@@ -75,14 +124,11 @@ def main():
             continue
         wrapped = PKCS1_OAEP.new(rsa_key, hashAlgo=SHA256).encrypt(key_k)
         b64 = base64.b64encode(wrapped).decode()
-        open(f"keygrants_{pc}.b64", "w").write(b64)
         print(f"wrapped K for {pc}")
-
-        sh(f'gh release create licenses --title "License grants" --notes "auto" --repo {repo} 2>/dev/null || true')
-        sh(f'gh release delete-asset licenses "keygrants_{pc}.b64" --yes --repo {repo} 2>/dev/null || true')
-        code, out = sh(f'gh release upload licenses "keygrants_{pc}.b64" --clobber --repo {repo}')
-        if code != 0:
-            print(f"upload failed for {pc}: {out}")
+        try:
+            upload_asset(pc, b64)
+        except Exception as e:
+            print(f"upload failed for {pc}: {e}")
             continue
         granted[pc] = prefix
         done.append(pc)
