@@ -32,7 +32,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PC=$(python scripts/pc_from_event.py)
-          if [ -n "$PC" ] && grep -qi "^$PC$" approved.txt; then
+          if [ -n "$PC" ] && grep -qiw "$PC" approved.txt; then
             echo "$PC already approved - triggering grant workflow"
             gh workflow run grant.yml --repo "$GITHUB_REPOSITORY"
           fi
