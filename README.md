@@ -15,6 +15,20 @@ the app opens. They are never asked again (key cached encrypted on their PC).
 
 Denying = do nothing. They stay blocked forever.
 
+## If an approved PC reinstalls (fresh key)
+
+Reinstalling the kit generates a NEW RSA identity, so it files a new
+request. That request is intentionally NOT auto-granted. To approve a
+reinstall:
+
+1. `pending.txt` -> pencil icon -> delete that PC code's old line -> commit
+   (first key per code wins; the old line blocks the new one)
+2. Tell the user to click **Cancel** on their popup and start the app again
+   (START bat re-files the request with the new key)
+3. Check `pending.txt` - the code now has the new key
+4. Actions -> **Grant license keys** -> Run workflow (main)
+5. Their popup picks the new grant up within ~10s and the app starts
+
 ## Files
 
 - `approved.txt` - PC codes you've approved (one per line)
