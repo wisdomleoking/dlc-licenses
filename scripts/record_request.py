@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Runs on GitHub Actions when a license request issue is opened.
 Extracts PC code + RSA public key from the issue body and appends to
-pending.txt (last entry per code wins). Commits via GITHUB_TOKEN.
+pending.txt. FIRST entry per code wins: if the code already has a pending
+key, later requests for the same code are ignored (the author removes the
+stale line manually to accept a new identity). Commits via GITHUB_TOKEN.
 """
 import os
 import re
@@ -32,6 +34,21 @@ def main():
     except Exception:
         print("invalid pubkey in issue - ignoring")
         sys.exit(0)
+
+    # first entry per code wins: refuse to overwrite an existing pending
+    # key, so a later issue (possibly from someone else) cannot hijack the
+    # grant for this PC code
+    if os.path.exists("pending.txt"):
+        for line in open("pending.txt"):
+            parts = line.strip().split(maxsplit=1)
+            if parts and parts[0].upper() == code:
+                if len(parts) > 1 and parts[1] == pubkey_b64:
+                    print(f"pending entry for {code} unchanged - ignoring")
+                else:
+                    print(f"pending entry for {code} already exists - ignoring "
+                          f"(author removes the old line manually to accept a "
+                          f"new key)")
+                sys.exit(0)
 
     line = f"{code} {pubkey_b64}"
     with open("pending.txt", "a") as fh:
